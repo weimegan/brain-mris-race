@@ -13,20 +13,19 @@ import matplotlib.pyplot as plt
 import os
 from utils import *
 
-root_path = '/data/T1_images'
+root_path = 'data/T1_images'
 data_frontal_dir = f'{root_path}/frontal'
 data_horizontal_dir = f'{root_path}/horizontal'
 data_sagittal_dir = f'{root_path}/sagittal'
 
-# from pandas.core.dtypes.base import E
 class BrainDataset(Dataset):
   def __init__(self, data_dir, predictor):
-    # super(BrainIterableDataset).__init__()
     self.data_dir = data_dir
     self.predictor = predictor
     self.metadata = pd.read_csv(f'{root_path}/subj_data.csv')
     self.image_list = [img for img in sorted(os.listdir(self.data_dir)) if img.split('_')[0] in self.metadata['subjID'].values]
-
+    self.sex_labels = self.metadata['SEX_ID'].values - 1
+    self.age_labels = self.metadata['AGE'].values
     self.onehot_race = pd.get_dummies(self.metadata['ETHNIC_ID']).values
 
   def __len__(self):
@@ -65,11 +64,13 @@ if __name__ == '__main__':
     batch_size = 3
 
     # Number of epochs to train for 
-    num_epochs = 10
+    num_epochs = 50
 
     # Flag for feature extracting. When False, we finetune the whole model, 
     #   when True we only update the reshaped layer params
     feature_extract = True
+
+    print(f'Model: {model_name}, # Classes: {num_classes}, Batch Size: {batch_size}, Epochs: {num_epochs}')
 
     dataset = BrainDataset(data_sagittal_dir, 'sex')
     train_size = int(0.7*len(dataset))
@@ -120,5 +121,5 @@ if __name__ == '__main__':
     # Train and evaluate
     model_ft, hist = train_model(model_ft, dataloaders_dict, criterion, optimizer_ft, num_epochs=num_epochs, is_inception=(model_name=="inception"))
 
-    torch.save(model_ft.state_dict(), 'models/resnet_gender_sagittal.pth')
+    torch.save(model_ft.state_dict(), f'models/{model_name}_gender_sagittal.pth')
     test_model(model_ft, dataloaders_dict)
