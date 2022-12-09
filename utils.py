@@ -15,7 +15,7 @@ import copy
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-def train_model(model, dataloaders, criterion, optimizer, num_epochs=25, is_inception=False):
+def train_model(model, dataloaders, criterion, optimizer, predictor, num_epochs=25, is_inception=False):
     since = time.time()
 
     val_acc_history = []
@@ -61,17 +61,30 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25, is_ince
                     else:
                         outputs = model(inputs.float())
                         loss = criterion(outputs, labels)
-
+                    # print("outputs", type(outputs), outputs)
+                    # print("labels", type(labels), labels)
                     _, preds = torch.max(outputs, 1)
-
+                    if predictor == 'race':
+                      class_preds = torch.argmax(outputs, axis=1)
+                      
                     # backward + optimize only if in training phase
                     if phase == 'train':
                         loss.backward()
                         optimizer.step()
 
                 # statistics
+                # print("running corrects", running_corrects)
+                # print("preds", preds)
+                # print("labels", labels)
+                # print("class preds", class_preds)
                 running_loss += loss.item() * inputs.size(0)
-                running_corrects += torch.sum(preds == labels.data)
+                
+                if predictor == 'race':
+                  label_class = torch.argmax(labels.data, axis=1)
+                  running_corrects += torch.sum(class_preds == label_class)
+                else:
+                  running_corrects += torch.sum(preds == labels.data)
+                
 
             epoch_loss = running_loss / len(dataloaders[phase].dataset)
             epoch_acc = running_corrects.double() / len(dataloaders[phase].dataset)
@@ -95,26 +108,29 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25, is_ince
     model.load_state_dict(best_model_wts)
     return model, val_acc_history
 
-def test_model(model, dataloader):
+def test_model(model, dataloader, predictor):
     since = time.time()
     running_corrects = 0
-    # test_acc_history = []
     best_acc = 0.0
+    all_preds=[]
+    all_labels=[]
     
     # Iterate over data.
     for inputs, labels in dataloader['test']:
         inputs = inputs.to(device)
         labels = labels.to(device)
         outputs = model(inputs.float())
-        _, preds = torch.max(outputs, 1)
+        if predictor == 'race':
+          preds = torch.argmax(outputs, axis=1)
+          l = torch.argmax(labels.data, axis=1)
+        else:
+          l = labels.data
+          _, preds = torch.max(outputs, 1)
+          
+        running_corrects += torch.sum(preds == l)
 
-        # statistics
-        print("preds", preds)
-        print("labels.data", labels.data)
-        running_corrects += torch.sum(preds == labels.data)
-        print("running_corrects", running_corrects)
-        
-        # test_acc_history.append(acc)
+        all_preds.extend(preds.cpu().numpy())
+        all_labels.extend(l.cpu().numpy())
 
     acc = running_corrects.double() / len(dataloader['test'].dataset)
     time_elapsed = time.time() - since
@@ -122,7 +138,7 @@ def test_model(model, dataloader):
     print('Best val Acc: {:4f}'.format(acc))
 
     # load best model weights
-    return acc
+    return acc, all_preds, all_labels
 
 def set_parameter_requires_grad(model, feature_extracting):
     if feature_extracting:

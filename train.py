@@ -14,9 +14,6 @@ import os
 from utils import *
 
 root_path = 'data/T1_images'
-data_frontal_dir = f'{root_path}/frontal'
-data_horizontal_dir = f'{root_path}/horizontal'
-data_sagittal_dir = f'{root_path}/sagittal'
 
 class BrainDataset(Dataset):
   def __init__(self, data_dir, predictor):
@@ -54,72 +51,77 @@ class BrainDataset(Dataset):
 
 
 if __name__ == '__main__':
-    # Models to choose from [resnet, alexnet, vgg, squeezenet, densenet, inception]
-    model_name = "resnet"
+  PREDICTOR = 'sex'
+  SLICE = 'sagittal'
+  data_dir = f'{root_path}/{SLICE}' 
 
-    # Number of classes in the dataset
-    num_classes = 2
+  # Models to choose from [resnet, alexnet, vgg, squeezenet, densenet, inception]
+  model_name = "resnet"
 
-    # Batch size for training (change depending on how much memory you have)
-    batch_size = 3
+  # Number of classes in the dataset
+  num_classes = 2 if PREDICTOR == 'sex' else 4
 
-    # Number of epochs to train for 
-    num_epochs = 50
+  # Batch size for training (change depending on how much memory you have)
+  batch_size = 3
 
-    # Flag for feature extracting. When False, we finetune the whole model, 
-    #   when True we only update the reshaped layer params
-    feature_extract = True
+  # Number of epochs to train for 
+  num_epochs = 50
 
-    print(f'Model: {model_name}, # Classes: {num_classes}, Batch Size: {batch_size}, Epochs: {num_epochs}')
+  # Flag for feature extracting. When False, we finetune the whole model, 
+  #   when True we only update the reshaped layer params
+  feature_extract = True
 
-    dataset = BrainDataset(data_sagittal_dir, 'sex')
-    train_size = int(0.7*len(dataset))
-    val_size = int(0.1*len(dataset))
-    test_size = int(len(dataset) - train_size - val_size)
-    train_set, val_set, test_set = random_split(dataset, [train_size, val_size, test_size])
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True)
-    dataloaders_dict = {"train": train_loader, "val": val_loader, "test": test_loader}
+  print(f'Predict: {PREDICTOR}, Slice: {SLICE}')
+  print(f'Model: {model_name}, # Classes: {num_classes}, Batch Size: {batch_size}, Epochs: {num_epochs}')
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+  dataset = BrainDataset(data_dir, PREDICTOR)
+  train_size = int(0.7*len(dataset))
+  val_size = int(0.1*len(dataset))
+  test_size = int(len(dataset) - train_size - val_size)
+  train_set, val_set, test_set = random_split(dataset, [train_size, val_size, test_size])
+  train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+  val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True)
+  test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True)
+  dataloaders_dict = {"train": train_loader, "val": val_loader, "test": test_loader}
 
-    # Initialize the model for this run
-    model_ft, input_size = initialize_model(model_name, num_classes, feature_extract, use_pretrained=True)
+  device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # Print the model we just instantiated
-    print(model_ft)
+  # Initialize the model for this run
+  model_ft, input_size = initialize_model(model_name, num_classes, feature_extract, use_pretrained=True)
 
-    # Send the model to GPU
-    model_ft = model_ft.to(device)
+  # Print the model we just instantiated
+  print(model_ft)
 
-    # Gather the parameters to be optimized/updated in this run. If we are
-    #  finetuning we will be updating all parameters. However, if we are 
-    #  doing feature extract method, we will only update the parameters
-    #  that we have just initialized, i.e. the parameters with requires_grad
-    #  is True.
-    params_to_update = model_ft.parameters()
-    print("Params to learn:")
-    if feature_extract:
-        params_to_update = []
-        for name,param in model_ft.named_parameters():
-            if param.requires_grad == True:
-                params_to_update.append(param)
-                print("\t",name)
-    else:
-        for name,param in model_ft.named_parameters():
-            if param.requires_grad == True:
-                print("\t",name)
+  # Send the model to GPU
+  model_ft = model_ft.to(device)
 
-    # Observe that all parameters are being optimized
-    optimizer_ft = optim.SGD(params_to_update, lr=0.001, momentum=0.9)
+  # Gather the parameters to be optimized/updated in this run. If we are
+  #  finetuning we will be updating all parameters. However, if we are 
+  #  doing feature extract method, we will only update the parameters
+  #  that we have just initialized, i.e. the parameters with requires_grad
+  #  is True.
+  params_to_update = model_ft.parameters()
+  print("Params to learn:")
+  if feature_extract:
+      params_to_update = []
+      for name,param in model_ft.named_parameters():
+          if param.requires_grad == True:
+              params_to_update.append(param)
+              print("\t",name)
+  else:
+      for name,param in model_ft.named_parameters():
+          if param.requires_grad == True:
+              print("\t",name)
+
+  # Observe that all parameters are being optimized
+  optimizer_ft = optim.SGD(params_to_update, lr=0.001, momentum=0.9)
 
 
-    # Setup the loss fxn
-    criterion = nn.CrossEntropyLoss()
+  # Setup the loss fxn
+  criterion = nn.CrossEntropyLoss()
 
-    # Train and evaluate
-    model_ft, hist = train_model(model_ft, dataloaders_dict, criterion, optimizer_ft, num_epochs=num_epochs, is_inception=(model_name=="inception"))
+  # Train and evaluate
+  model_ft, hist = train_model(model_ft, dataloaders_dict, criterion, optimizer_ft, PREDICTOR, num_epochs=num_epochs, is_inception=(model_name=="inception"))
 
-    torch.save(model_ft.state_dict(), f'models/{model_name}_gender_sagittal.pth')
-    test_model(model_ft, dataloaders_dict)
+  torch.save(model_ft.state_dict(), f'models/{model_name}_{PREDICTOR}_{SLICE}_lr=0.001.pth')
+  test_model(model_ft, dataloaders_dict, PREDICTOR)
