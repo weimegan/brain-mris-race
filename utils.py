@@ -95,12 +95,12 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25, is_ince
     model.load_state_dict(best_model_wts)
     return model, val_acc_history
 
-def test_model(model, dataloader, criterion, optimizer, is_inception=False):
+def test_model(model, dataloader):
     since = time.time()
     running_corrects = 0
-    test_acc_history = []
+    # test_acc_history = []
     best_acc = 0.0
-
+    
     # Iterate over data.
     for inputs, labels in dataloader['test']:
         inputs = inputs.to(device)
@@ -109,16 +109,20 @@ def test_model(model, dataloader, criterion, optimizer, is_inception=False):
         _, preds = torch.max(outputs, 1)
 
         # statistics
+        print("preds", preds)
+        print("labels.data", labels.data)
         running_corrects += torch.sum(preds == labels.data)
-        acc = running_corrects.double() / len(dataloader['test'].dataset)
-        test_acc_history.append(acc)
+        print("running_corrects", running_corrects)
+        
+        # test_acc_history.append(acc)
 
+    acc = running_corrects.double() / len(dataloader['test'].dataset)
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
-    print('Best val Acc: {:4f}'.format(best_acc))
+    print('Best val Acc: {:4f}'.format(acc))
 
     # load best model weights
-    return acc, test_acc_history
+    return acc
 
 def set_parameter_requires_grad(model, feature_extracting):
     if feature_extracting:

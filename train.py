@@ -121,4 +121,4 @@ if __name__ == '__main__':
     model_ft, hist = train_model(model_ft, dataloaders_dict, criterion, optimizer_ft, num_epochs=num_epochs, is_inception=(model_name=="inception"))
 
     torch.save(model_ft.state_dict(), 'models/resnet_gender_sagittal.pth')
-    test_model(model_ft, dataloaders_dict, criterion, optimizer_ft, is_inception=False)
+    test_model(model_ft, dataloaders_dict)
