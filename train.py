@@ -12,37 +12,89 @@ import skimage.transform as st
 import matplotlib.pyplot as plt
 import os
 from utils import *
+import random
+from itertools import product
 
 root_path = 'data/T1_images'
 
+random.seed(0)
+
+# from pandas.core.dtypes.base import E
 class BrainDataset(Dataset):
-  def __init__(self, data_dir, predictor):
+  def __init__(self, data_dir, predictor, images_per_group):
+    # super(BrainIterableDataset).__init__()
     self.data_dir = data_dir
     self.predictor = predictor
+    self.images_per_group = images_per_group
     self.metadata = pd.read_csv(f'{root_path}/subj_data.csv')
-    self.image_list = [img for img in sorted(os.listdir(self.data_dir)) if img.split('_')[0] in self.metadata['subjID'].values]
-    self.sex_labels = self.metadata['SEX_ID'].values - 1
-    self.age_labels = self.metadata['AGE'].values
+    self.metadata = self.metadata.loc[self.metadata['ETHNIC_ID'] != 0]
+    self.all_subject_combs = self.get_augmentation_combinations()
     self.onehot_race = pd.get_dummies(self.metadata['ETHNIC_ID']).values
+    self.labels = [self.get_labels(img[0]) for img in self.all_subject_combs]
 
   def __len__(self):
-    return len(self.image_list)
+    return len(self.all_subject_combs)
+
+  def get_augmentation_combinations(self):
+    subjects = np.array([img.split('_')[0] for img in sorted(os.listdir(self.data_dir)) if img.split('_')[0] in self.metadata['subjID'].values])
+    race = np.array([self.metadata.loc[self.metadata['subjID'] == subj]['ETHNIC_ID'].values[0] for subj in subjects])
+
+    slices = ['minus5', 'minus10', '', 'plus5', 'plus10']
+    flip = ['flip1', 'noflip', 'flip2', 'flip12']
+    resize = ['original', 'small', 'smaller']
+
+    all_subject_combs = []
+
+    for group in np.unique(race):
+      indices = np.where(race == group, True, False)
+      subj_in_group = subjects[indices]
+
+      combs = list(product(subj_in_group, slices, flip, resize))
+      random.shuffle(combs)
+      combs = combs[:self.images_per_group]
+
+      all_subject_combs += combs
+    return all_subject_combs
 
   def get_labels(self, subject_id):
     if self.predictor == 'sex':
-      label = self.metadata[self.metadata['subjID'] == subject_id]['SEX_ID'].values[0] - 1
+      label = self.metadata.loc[self.metadata['subjID'] == subject_id]['SEX_ID'].values[0] - 1
     elif self.predictor == 'race':
-      label = self.onehot_race[(self.metadata['subjID'] == subject_id).values][0]
+      label = torch.tensor(self.onehot_race[(self.metadata['subjID'] == subject_id).values][0], dtype=torch.float32)
     elif self.predictor == 'age':
-      label = self.metadata[self.metadata['subjID'] == subject_id]['AGE'].values[0]
+      label = self.metadata.loc[self.metadata['subjID'] == subject_id]['AGE'].values[0]
     return label
 
   def __getitem__(self, idx):
     IMAGE_SIZE = (224, 224)
-    filename = self.image_list[idx]
-    image = np.load(f'{self.data_dir}/{filename}')
+    if self.all_subject_combs[idx][1] == '':
+      filename = f'{self.all_subject_combs[idx][0]}_{SLICE}'
+    else:
+      filename = f'{self.all_subject_combs[idx][0]}_{SLICE}_{self.all_subject_combs[idx][1]}'
+    image = np.load(f'{self.data_dir}/{filename}.npy')
+
+    if self.all_subject_combs[idx][2] == 'flip1':
+      image = image[::-1]
+    elif self.all_subject_combs[idx][2] == 'flip2':
+      image == image[:,::-1]
+    elif self.all_subject_combs[idx][2] == 'flip12':
+      image = image[::-1, ::-1]
+
+    if self.all_subject_combs[idx][3] == 'original':
+      pass
+    else:
+      if self.all_subject_combs[idx][3] == 'small':
+        shrink = 90/100
+      else: 
+        shrink = 80/100
+
+      pad = (1-shrink) /2
+      smaller_image = st.resize(image, (int(len(image)*(shrink)), int(len(image[1])*(shrink))))
+      smaller_image = np.pad(smaller_image, pad_width=((int(len(image)*pad), int(len(image)*pad)), (int(len(image[1])*pad), int(len(image[1])*pad))))
+      image = smaller_image
+
     resized_image = st.resize(image, IMAGE_SIZE)
-    image_3channel = torch.from_numpy(np.tile(np.expand_dims(image, 0), (3,1,1)))
+    image_3channel = torch.from_numpy(np.tile(np.expand_dims(resized_image, 0), (3,1,1)))
 
     subject_id = filename.split('_')[0]
     label = self.get_labels(subject_id)
@@ -74,7 +126,7 @@ if __name__ == '__main__':
   print(f'Predict: {PREDICTOR}, Slice: {SLICE}')
   print(f'Model: {model_name}, # Classes: {num_classes}, Batch Size: {batch_size}, Epochs: {num_epochs}')
 
-  dataset = BrainDataset(data_dir, PREDICTOR)
+  dataset = BrainDataset(data_dir, PREDICTOR, 800)
   train_size = int(0.7*len(dataset))
   val_size = int(0.1*len(dataset))
   test_size = int(len(dataset) - train_size - val_size)
